@@ -16,6 +16,7 @@ Date last modified: 8/4/2021
 
 from os.path import expanduser, join, isdir
 from os import mkdir
+import os
 from sys import argv
 from itertools import compress
 import datetime
@@ -54,6 +55,18 @@ def download_mimic_iii_records(RecordsFile, OutputPath):
     
     for file in RecordFiles:
         print(f'{datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}: Processing record {file}')
+
+        SubjectName = file.split('/')[1]
+        SubjectName = SubjectName.split('_')[0]
+        SubjectFolder = join(join(OutputPath, SubjectName))
+        if not isdir(SubjectFolder):
+            mkdir(SubjectFolder)
+
+        h5name = join(SubjectFolder, file.split('/')[1] + ".h5")
+        if os.path.exists(h5name):
+            print(h5name + " already exists, skipping...")
+            continue
+        
 
         # download record
         record = wfdb.rdrecord(file.split('/')[1], pn_dir='mimic3wdb/' + file.split('_')[0])
@@ -94,13 +107,9 @@ def download_mimic_iii_records(RecordsFile, OutputPath):
         ppg_onset_pks = find_minima(ppg, ppg_pks, fs)
 
         # save ABP and PPG signals as well as detected peaks in a .h5 file
-        SubjectName = file.split('/')[1]
-        SubjectName = SubjectName.split('_')[0]
-        SubjectFolder = join(join(OutputPath, SubjectName))
-        if not isdir(SubjectFolder):
-            mkdir(SubjectFolder)
+
     
-        with h5py.File(join(SubjectFolder, file.split('/')[1] + ".h5"),'w') as f:
+        with h5py.File(h5name,'w') as f:
             signals = np.concatenate((abp[:,np.newaxis],ppg[:,np.newaxis]), axis=1)
             f.create_dataset('val', signals.shape, data=signals)
             f.create_dataset('nB2', (1,len(ppg_onset_pks)), data=ppg_onset_pks)

@@ -17,7 +17,9 @@ from os import listdir, scandir
 from random import shuffle
 from sys import argv
 import datetime
+import os
 import argparse
+import glob
 
 import h5py
 import numpy as np
@@ -61,6 +63,7 @@ def prepare_MIMIC_dataset(DataPath, OutputFile, NsampPerSubMax:int=None, NsampMa
         with h5py.File(OutputFile, "a") as f:
             if savePPGData:
                 f.create_dataset('ppg', (0,win_len*fs), maxshape=(None,win_len*fs), chunks=(100, win_len*fs))
+                f.create_dataset('ppg_unfiltered', (0,win_len*fs), maxshape=(None,win_len*fs), chunks=(100, win_len*fs))
             f.create_dataset('label', (0,2), maxshape=(None,2), dtype=int, chunks=(100,2))
             f.create_dataset('subject_idx', (0,1), maxshape=(None,1), dtype=int, chunks=(100,1))
 
@@ -73,15 +76,15 @@ def prepare_MIMIC_dataset(DataPath, OutputFile, NsampPerSubMax:int=None, NsampMa
         print(f'{datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}: Processing subject {idx+1} of {NumSubjects} ({dirs.name}): ', end='')
 
         PPG_RECORD = np.empty((0, win_len * fs))
+        PPG_RECORD_UNFILTERED = np.empty((0, win_len * fs))
         OUTPUT = np.empty((0, 2))
-
-        DataFiles = [f for f in listdir(join(DataPath,dirs)) if isfile(join(DataPath, dirs,f)) and f.endswith('.h5')]
+        DataFiles = glob.glob(os.path.join(DataPath, dirs.name) + "/*.h5")# [f for f in listdir(join(DataPath,dirs)) if isfile(join(DataPath, dirs,f)) and f.endswith('.h5')]
         shuffle(DataFiles)
 
         N_samp_total = 0
         for file in DataFiles:
             try:
-                with h5py.File(join(DataPath, dirs, file), "r") as f:
+                with h5py.File(file, "r") as f:
                     data = {}
                     for key in f.keys():
                         data[key] = np.array(f[key]).transpose()
@@ -109,6 +112,7 @@ def prepare_MIMIC_dataset(DataPath, OutputFile, NsampPerSubMax:int=None, NsampMa
 
             if savePPGData:
                 ppg_record = np.zeros((N_win, win_len*fs))
+                ppg_record_unfiltered = np.zeros((N_win, win_len*fs))
 
             output = np.zeros((N_win, 2))
 
@@ -196,6 +200,7 @@ def prepare_MIMIC_dataset(DataPath, OutputFile, NsampPerSubMax:int=None, NsampMa
 
                 # filter the ppg window using a 4th order Butterworth filter
                 if savePPGData:
+                    ppg_record_unfiltered[i, :] = ppg_win
                     ppg_win = filtfilt(b,a, ppg_win)
                     ppg_win = ppg_win - np.mean(ppg_win)
                     ppg_win = ppg_win/np.std(ppg_win)
@@ -211,6 +216,7 @@ def prepare_MIMIC_dataset(DataPath, OutputFile, NsampPerSubMax:int=None, NsampMa
 
                         if savePPGData:
                             ppg_record = np.delete(ppg_record, range(i,ppg_record.shape[0]), axis=0)
+                            ppg_record_unfiltered = np.delete(ppg_record_unfiltered, range(i,ppg_record_unfiltered.shape[0]), axis=0)
 
                         break
 
@@ -219,6 +225,7 @@ def prepare_MIMIC_dataset(DataPath, OutputFile, NsampPerSubMax:int=None, NsampMa
 
             if savePPGData:
                 PPG_RECORD = np.vstack((PPG_RECORD, ppg_record[np.invert(idx_nans),:]))
+                PPG_RECORD_UNFILTERED = np.vstack((PPG_RECORD_UNFILTERED, ppg_record_unfiltered[np.invert(idx_nans),:]))
 
             # write record name to txt file for reproducibility
             with open(RecordsFile, 'a') as f:
@@ -241,6 +248,7 @@ def prepare_MIMIC_dataset(DataPath, OutputFile, NsampPerSubMax:int=None, NsampMa
 
                     if savePPGData:
                         PPG_RECORD = PPG_RECORD[idx_select,:]
+                        PPG_RECORD_UNFILTERED = PPG_RECORD_UNFILTERED[idx_select,:]
 
                     OUTPUT = OUTPUT[idx_select,:]
 
@@ -255,9 +263,12 @@ def prepare_MIMIC_dataset(DataPath, OutputFile, NsampPerSubMax:int=None, NsampMa
 
                 if savePPGData:
                     ppg_dataset = f['ppg']
-
                     ppg_dataset.resize(DatasetNewLength, axis=0)
                     ppg_dataset[-PPG_RECORD.shape[0]:,:] = PPG_RECORD
+
+                    ppg_dataset = f['ppg_unfiltered']
+                    ppg_dataset.resize(DatasetNewLength, axis=0)
+                    ppg_dataset[-PPG_RECORD_UNFILTERED.shape[0]:,:] = PPG_RECORD_UNFILTERED      
 
                 subject_dataset = f['subject_idx']
                 subject_dataset.resize(DatasetNewLength, axis=0)
@@ -284,13 +295,13 @@ if __name__ == "__main__":
     parser.add_argument('datapath', type=str,
                         help="Path containing data records downloaded from the MIMIC-III database")
     parser.add_argument('output', type=str, help="Target .h5 file")
-    parser.add_argument('--win_len', type=int, nargs='?', default=7,
+    parser.add_argument('--win_len', type=int, nargs='?', default=20,
                         help="PPG window length in seconds (default: 7)")
-    parser.add_argument('--win_overlap', type=float, nargs='?', default=0.5,
+    parser.add_argument('--win_overlap', type=float, nargs='?', default=0.01,
                         help="ammount of overlap between adjacend windows in fractions of the window length (default: 0.5)")
-    parser.add_argument('--maxsampsubject', type=int, default=None, help="Maximum number of samples per subject")
+    parser.add_argument('--maxsampsubject', type=int, default=1000, help="Maximum number of samples per subject")
     parser.add_argument('--maxsamp', type=int, default=None, help="Maximum total number os samples in the dataset")
-    parser.add_argument('--save_ppg_data', type=int, default=0, help="0: save BP data only; 1: save PPG and BP data")
+    parser.add_argument('--save_ppg_data', type=int, default=1, help="0: save BP data only; 1: save PPG and BP data")
     args = parser.parse_args()
 
     DataPath = args.datapath
