@@ -88,7 +88,7 @@ def prepare_MIMIC_dataset(DataPath, OutputFile, NsampPerSubMax:int=None, NsampMa
                     data = {}
                     for key in f.keys():
                         data[key] = np.array(f[key]).transpose()
-            except TypeError:
+            except :
                 print("could not read file. Skipping.")
             if savePPGData:
                 PPG = data['val'][1, :]
