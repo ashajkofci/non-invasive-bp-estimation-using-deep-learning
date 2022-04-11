@@ -49,7 +49,7 @@ def prepare_MIMIC_dataset(DataPath, OutputFile, NsampPerSubMax:int=None, NsampMa
     SubjectDirs = scandir(DataPath)
 
     fs = 125
-
+    skipped = 0
     SBP_min = 40;
     SBP_max = 200;
     DBP_min = 40;
@@ -281,11 +281,12 @@ def prepare_MIMIC_dataset(DataPath, OutputFile, NsampPerSubMax:int=None, NsampMa
                         return 0
 
         else:
+            skipped += 1
             print(f'skipping')
 
         subjectID += 1
 
-    print("script finished")
+    print("script finished skipped {} files".format(skipped))
 
     return 0
 
@@ -296,11 +297,11 @@ if __name__ == "__main__":
     parser.add_argument('datapath', type=str,
                         help="Path containing data records downloaded from the MIMIC-III database")
     parser.add_argument('output', type=str, help="Target .h5 file")
-    parser.add_argument('--win_len', type=int, nargs='?', default=20,
+    parser.add_argument('--win_len', type=int, nargs='?', default=25,
                         help="PPG window length in seconds (default: 7)")
-    parser.add_argument('--win_overlap', type=float, nargs='?', default=0.01,
+    parser.add_argument('--win_overlap', type=float, nargs='?', default=0.2,
                         help="ammount of overlap between adjacend windows in fractions of the window length (default: 0.5)")
-    parser.add_argument('--maxsampsubject', type=int, default=1000, help="Maximum number of samples per subject")
+    parser.add_argument('--maxsampsubject', type=int, default=2000, help="Maximum number of samples per subject")
     parser.add_argument('--maxsamp', type=int, default=None, help="Maximum total number os samples in the dataset")
     parser.add_argument('--save_ppg_data', type=int, default=1, help="0: save BP data only; 1: save PPG and BP data")
     args = parser.parse_args()
